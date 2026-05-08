@@ -2,6 +2,8 @@
 
 A real-time image and video dithering tool, refactored as a Nuxt 4 + Vue 3 + Tailwind 4 app.
 
+Live: https://ditherspace-nuxt.vercel.app/
+
 This is a Nuxt rewrite of [landonjsmith/DitherSpace](https://github.com/landonjsmith/DitherSpace), itself a vanilla-JS port of the original cyberspace.online dither algorithm. Bayer-WebGL algorithm originally by [@unremarkablegarden](https://github.com/unremarkablegarden); Floyd–Steinberg and Atkinson by Landon J. Smith. This version reorganizes the codebase into Vue components and composables and adds video dithering with WebM/MP4 export.
 
 ## Stack
