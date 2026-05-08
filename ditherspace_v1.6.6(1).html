@@ -1,0 +1,1401 @@
+<!--DitherSpace v1.6.6 by Landon Smith (build: 50726.1211)-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DitherSpace</title>
+    <style>
+        .main-container { display: flex; gap: 20px; align-items: flex-start; }
+        .controls-section { flex: 0 0 300px; }
+        .image-section { flex: 1; }
+        .canvas-container {
+            max-width: 100%; max-height: 600px; overflow: auto;
+            border: 1px solid #ccc;
+            position: relative; display: inline-block;
+        }
+        #canvas { display: block; }
+        .resolution-controls { display: flex; gap: 10px; align-items: center; margin: 10px 0; }
+        .resolution-controls input[type="number"] { width: 80px; }
+        input[type="range"] { width: 100%; }
+        .video-controls { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+        #videoProgress { flex: 1; min-width: 80px; }
+        .mode-tabs { display: flex; margin-bottom: 12px; }
+        .mode-tab { flex: 1; padding: 6px 0; text-align: center; cursor: pointer; border: 1px solid #ccc; }
+        .mode-tab.active { font-weight: bold; }
+        #exportProgress { display: none; margin-top: 8px; }
+        .video-placeholder {
+            width: 400px; height: 300px;
+            border: 1px solid #ccc;
+            display: none;
+            align-items: center; justify-content: center;
+            background: #f5f5f5; color: #999;
+            font-size: 1em; box-sizing: border-box;
+        }
+        .image-section { position: relative; }
+        #dropOverlay {
+            display: none;
+            position: absolute;
+            border: 1px solid #ccc;
+            background: #f5f5f5;
+            color: #999;
+            font-size: 1em;
+            box-sizing: border-box;
+            z-index: 10;
+            align-items: center;
+            justify-content: center;
+        }
+        #dropOverlay.active { display: flex; }
+        :root {
+  --bg-color: #ffffff;
+  --text-color: #000000;
+}
+
+
+.dark-mode {
+  --bg-color: #121212;
+  --text-color: #ffffff;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  transition: background-color 0.3s, color 0.3s; 
+}
+    </style>
+</head>
+<body>
+    <h1>DitherSpace (v1.6.6)</h1>
+    An open-source port of the cyberspace.online image dithering algorithm. Source code is available on <a href="https://github.com/landonjsmith/DitherSpace">GitHub</a>.<br>
+    Translated to vanilla JS by Landon Smith | Additional dithering algorithms &amp; video support by Landon Smith | <a href="https://landonjsmith.com">Home</a> <br> 
+    <button id="theme-toggle">Toggle Dark Mode</button>
+    <hr>
+
+    <div class="mode-tabs">
+        <div class="mode-tab active" id="tabImage" onclick="switchMode('image')">Image Mode</div>
+        <div class="mode-tab"        id="tabVideo" onclick="switchMode('video')">Video Mode</div>
+    </div>
+
+
+    <div id="imageLoadSection">
+        <h2>Load An Image</h2>
+        <input type="file" id="imageInput" accept="image/*">
+        <button onclick="loadSampleImage()">Generate Test Image</button>
+    </div>
+
+
+    <div id="videoLoadSection" style="display:none;">
+        <h2>Load A Video</h2>
+        <input type="file" id="videoInput" accept="video/*">
+        <br> <br>
+        <strong> To manipulate the video parameters, you must first select a video file.</strong>
+        <br>
+        <p>Supports MP4, WebM, MOV. Dithering is applied live to every frame during playback.
+            Use "Export Video" to render and download a dithered copy. (WebM/VP8).</p>
+            <br>
+            <p>Export time will vary depending on the selected dithering algorithm, video length, and other parameters.</p>
+    </div>
+    <hr>
+
+    <div class="main-container">
+        <div class="controls-section">
+            <h2 id="sectionParamsTitle">Image Parameters</h2>
+            <p>
+                <b>Algorithm:</b><br>
+                <label><input type="radio" name="algorithm" value="bayer" checked> Bayer 8x8 (WebGL-based)</label><br>
+                <label><input type="radio" name="algorithm" value="fs"> Floyd-Steinberg (CPU-based)</label><br>
+                <label><input type="radio" name="algorithm" value="atkinson"> Atkinson (CPU-based)</label>
+                <br>
+                <small style="display:block;margin-top:5px;line-height:1.3;">
+                    <i>Floyd-Steinberg and Atkinson run on the CPU, which may cause slower output, but better quality results compared to Bayer. For video, Bayer is recommended for smooth real-time playback.</i>
+                </small>
+            </p>
+            <p>
+                <b>Color Mode:</b><br>
+                <label><input type="radio" name="colorMode" value="bw" checked> Black &amp; White</label><br>
+                <label><input type="radio" name="colorMode" value="color"> Full Color</label>
+            </p>
+            <p><b>Pixel Size:</b> <span id="pixelSizeValue">4</span>
+                <input type="range" id="pixelSize" min="1" max="20" value="4" step="1"></p>
+            <p><b>Dither Amount:</b> <span id="ditherAmountValue">0.75</span>
+                <input type="range" id="ditherAmount" min="0" max="1" value="0.75" step="0.05"></p>
+            <p><b>Bit Depth:</b> <span id="bitDepthValue">2</span>
+                <input type="range" id="bitDepth" min="1" max="8" value="2" step="1"></p>
+            <p><b>Contrast:</b> <span id="contrastValue">1.0</span>
+                <input type="range" id="contrast" min="0.5" max="2" value="1" step="0.1"></p>
+            <p><b>Scale:</b> <span id="scaleValue">1.0</span>
+                <input type="range" id="scale" min="0.1" max="2" value="1" step="0.1"></p>
+            <hr>
+            <h3>Output Resolution</h3>
+            <div class="resolution-info">
+                <b>Original:</b> <span id="originalResolution">-</span><br>
+                <b>Output:</b> <span id="outputResolution">-</span>
+            </div>
+            <div class="resolution-controls">
+                <label>Width: <input type="number" id="targetWidth" min="1"></label>
+                <label>Height: <input type="number" id="targetHeight" min="1"></label>
+                <button onclick="resetResolution()">Reset</button>
+            </div>
+            <label><input type="checkbox" id="maintainAspect" checked> Lock aspect ratio</label>
+            <hr>
+            <div id="bwColorControls">
+                <p><b>Foreground Color:</b> <input type="color" id="fgColor" value="#ffffff"></p>
+                <p><b>Background Color:</b> <input type="color" id="bgColor" value="#000000"></p>
+            </div>
+        </div>
+
+        <div class="image-section">
+            <div id="dropOverlay"></div>
+            <h2 id="sectionOutputTitle">Image Output</h2>
+            <div class="canvas-container">
+                <canvas id="canvas"></canvas>
+            </div>
+            <div id="videoPlaceholder" class="video-placeholder">No video file loaded.</div>
+
+            <!-- Image export -->
+            <div id="imageExportSection">
+                <p><button onclick="exportImage()">Export Dithered Image</button></p>
+            </div>
+
+            <!-- Video controls & export -->
+            <div id="videoControlsSection" style="display:none;">
+                <div class="video-controls">
+                    <button id="playPauseBtn" onclick="togglePlayPause()">Play</button>
+                    <button id="stopBtn" onclick="stopVideo()">Stop</button>
+                    <input type="range" id="videoProgress" min="0" max="100" value="0" step="0.1">
+                    <span id="videoTimecode">0:00 / 0:00</span>
+                </div>
+                <p style="margin-top:8px;">
+                    <b>Export Format:</b><br>
+                    <label><input type="radio" name="exportFormat" value="webm" checked> WebM (VP9)</label><br>
+                    <label><input type="radio" name="exportFormat" value="mp4"> MP4 (H.264) (if supported by browser)</label>
+                </p>
+                <p style="margin-top:4px;">
+                    <b>Export FPS:</b><br>
+                    <label><input type="radio" name="exportFps" value="15"> 15 fps</label><br>
+                    <label><input type="radio" name="exportFps" value="24"> 24 fps</label><br>
+                    <label><input type="radio" name="exportFps" value="30" checked> 30 fps</label>
+                </p>
+                <p style="margin-top:4px;">
+                    <b>Include Audio:</b><br>
+                    <label><input type="radio" name="exportAudio" value="none" checked> No audio</label><br>
+                    <label><input type="radio" name="exportAudio" value="11025"> 11 kHz </label><br>
+                    <label><input type="radio" name="exportAudio" value="22050"> 22 kHz</label><br>
+                    <label><input type="radio" name="exportAudio" value="44100"> 44.1 kHz (full quality)</label>
+                </p>
+                    <button onclick="exportVideo()" style="margin-top:6px;">Export Dithered Video</button>
+                </p>
+                <div id="exportProgress">
+                    <span id="exportProgressLabel">Rendering…</span>
+                    <div id="exportProgressBar"><div id="exportProgressFill" style="height:8px;width:0%;background:#000;"></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+var currentMode = 'image';
+
+// Per-mode resolution state so switching tabs doesn't clobber each other
+var imageResState = null; // { originalWidth, originalHeight, aspectRatio, scale, canvasW, canvasH }
+var videoResState = null;
+
+function switchMode(mode) {
+    if (mode === currentMode) return;
+
+    stopVideoPlayback();
+
+    // Slightly nudge the image load generation so any pending onload won't render
+    if (ditherer) ditherer._loadGen = (ditherer._loadGen || 0) + 1;
+
+
+    var saveTarget = currentMode === 'image' ? 'imageResState' : 'videoResState';
+    if (ditherer.imgElement || videoEl) {
+        window[saveTarget] = {
+            originalWidth:  ditherer.originalWidth,
+            originalHeight: ditherer.originalHeight,
+            aspectRatio:    ditherer.aspectRatio,
+            scale:          ditherer.params.scale,
+            canvasW:        ditherer.canvas.width,
+            canvasH:        ditherer.canvas.height
+        };
+    }
+
+    currentMode = mode;
+    document.getElementById('tabImage').classList.toggle('active', mode === 'image');
+    document.getElementById('tabVideo').classList.toggle('active', mode === 'video');
+    document.getElementById('imageLoadSection').style.display   = mode === 'image' ? '' : 'none';
+    document.getElementById('videoLoadSection').style.display   = mode === 'video' ? '' : 'none';
+    document.getElementById('imageExportSection').style.display = mode === 'image' ? '' : 'none';
+    document.getElementById('videoControlsSection').style.display = mode === 'video' ? '' : 'none';
+
+    // Updates headers depending on mode selection.
+    const isVideo = mode === 'video';
+    document.getElementById('sectionParamsTitle').textContent = isVideo ? 'Video Parameters' : 'Image Parameters';
+    document.getElementById('sectionOutputTitle').textContent = isVideo ? 'Video Output'     : 'Image Output';
+
+
+    var restoreTarget = mode === 'image' ? imageResState : videoResState;
+    if (restoreTarget) {
+        ditherer.originalWidth  = restoreTarget.originalWidth;
+        ditherer.originalHeight = restoreTarget.originalHeight;
+        ditherer.aspectRatio    = restoreTarget.aspectRatio;
+        ditherer.params.scale   = restoreTarget.scale;
+        ditherer.canvas.width   = restoreTarget.canvasW;
+        ditherer.canvas.height  = restoreTarget.canvasH;
+        ditherer.gl.viewport(0, 0, restoreTarget.canvasW, restoreTarget.canvasH);
+        document.getElementById('scale').value = restoreTarget.scale;
+        document.getElementById('scaleValue').textContent = restoreTarget.scale.toFixed(1);
+        updateResolutionDisplay();
+    }
+
+    if (mode === 'image') {
+        document.getElementById('videoPlaceholder').style.display = 'none';
+        document.getElementById('canvas').style.display = 'block';
+        setControlsEnabled(true);
+        if (ditherer && ditherer.imgElement) ditherer.render();
+    } else {
+        if (videoEl) {
+            document.getElementById('videoPlaceholder').style.display = 'none';
+            document.getElementById('canvas').style.display = 'block';
+            ditherer.renderFrame(videoEl);
+        } else {
+            document.getElementById('canvas').style.display = 'none';
+            document.getElementById('videoPlaceholder').style.display = 'flex';
+            setControlsEnabled(false);
+        }
+    }
+}
+class ImageDitherer {
+    constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.gl = null;
+        this.program = null;
+        this.texture = null;
+        this.positionBuffer = null;
+        this.texCoordBuffer = null;
+        this.originalWidth = 800;
+        this.originalHeight = 600;
+        this.aspectRatio = 1;
+        this.imgElement = null;
+        this.fsCanvas = document.createElement('canvas');
+        this.lastRenderedAlgo = null;
+        this.params = this.loadPreferences();
+        this.initWebGL();
+    }
+
+    loadPreferences() {
+        const defaults = {
+            algorithm: 'bayer', colorMode: 'bw', pixelSize: 4,
+            ditherAmount: 0.75, bitDepth: 2, contrast: 1.0, scale: 1.0,
+            fgColor: '#ffffff', bgColor: '#000000'
+        };
+        const saved = localStorage.getItem('ditherSpacePreferences');
+        if (saved) { try { const p = JSON.parse(saved); delete p.scale; return { ...defaults, ...p }; } catch(e) {} }
+        return defaults;
+    }
+
+    savePreferences() {
+        try { const { scale, ...toSave } = this.params; localStorage.setItem('ditherSpacePreferences', JSON.stringify(toSave)); } catch(e) {}
+    }
+
+    initWebGL() {
+        this.gl = this.canvas.getContext('webgl', { preserveDrawingBuffer: true });
+        if (!this.gl) { alert('WebGL is not supported in your browser'); return; }
+
+        const vertexShaderSource = `
+            attribute vec2 a_position;
+            attribute vec2 a_texCoord;
+            varying vec2 v_texCoord;
+            void main() { gl_Position = vec4(a_position, 0.0, 1.0); v_texCoord = a_texCoord; }
+        `;
+
+        const fragmentShaderSource = `
+            precision mediump float;
+            uniform sampler2D u_image;
+            uniform vec2 u_resolution;
+            uniform float u_pixelSize;
+            uniform float u_ditherAmount;
+            uniform float u_bitDepth;
+            uniform float u_contrast;
+            uniform vec3 u_fgColor;
+            uniform vec3 u_bgColor;
+            uniform int u_mode;
+            uniform int u_colorMode;
+            varying vec2 v_texCoord;
+
+            float bayer8x8(vec2 pos) {
+                int x = int(mod(pos.x, 8.0)); int y = int(mod(pos.y, 8.0));
+                int idx = y * 8 + x;
+                if (idx==0) return 0.0/64.0; else if (idx==1) return 32.0/64.0;
+                else if (idx==2) return 8.0/64.0; else if (idx==3) return 40.0/64.0;
+                else if (idx==4) return 2.0/64.0; else if (idx==5) return 34.0/64.0;
+                else if (idx==6) return 10.0/64.0; else if (idx==7) return 42.0/64.0;
+                else if (idx==8) return 48.0/64.0; else if (idx==9) return 16.0/64.0;
+                else if (idx==10) return 56.0/64.0; else if (idx==11) return 24.0/64.0;
+                else if (idx==12) return 50.0/64.0; else if (idx==13) return 18.0/64.0;
+                else if (idx==14) return 58.0/64.0; else if (idx==15) return 26.0/64.0;
+                else if (idx==16) return 12.0/64.0; else if (idx==17) return 44.0/64.0;
+                else if (idx==18) return 4.0/64.0; else if (idx==19) return 36.0/64.0;
+                else if (idx==20) return 14.0/64.0; else if (idx==21) return 46.0/64.0;
+                else if (idx==22) return 6.0/64.0; else if (idx==23) return 38.0/64.0;
+                else if (idx==24) return 60.0/64.0; else if (idx==25) return 28.0/64.0;
+                else if (idx==26) return 52.0/64.0; else if (idx==27) return 20.0/64.0;
+                else if (idx==28) return 62.0/64.0; else if (idx==29) return 30.0/64.0;
+                else if (idx==30) return 54.0/64.0; else if (idx==31) return 22.0/64.0;
+                else if (idx==32) return 3.0/64.0; else if (idx==33) return 35.0/64.0;
+                else if (idx==34) return 11.0/64.0; else if (idx==35) return 43.0/64.0;
+                else if (idx==36) return 1.0/64.0; else if (idx==37) return 33.0/64.0;
+                else if (idx==38) return 9.0/64.0; else if (idx==39) return 41.0/64.0;
+                else if (idx==40) return 51.0/64.0; else if (idx==41) return 19.0/64.0;
+                else if (idx==42) return 59.0/64.0; else if (idx==43) return 27.0/64.0;
+                else if (idx==44) return 49.0/64.0; else if (idx==45) return 17.0/64.0;
+                else if (idx==46) return 57.0/64.0; else if (idx==47) return 25.0/64.0;
+                else if (idx==48) return 15.0/64.0; else if (idx==49) return 47.0/64.0;
+                else if (idx==50) return 7.0/64.0; else if (idx==51) return 39.0/64.0;
+                else if (idx==52) return 13.0/64.0; else if (idx==53) return 45.0/64.0;
+                else if (idx==54) return 5.0/64.0; else if (idx==55) return 37.0/64.0;
+                else if (idx==56) return 63.0/64.0; else if (idx==57) return 31.0/64.0;
+                else if (idx==58) return 55.0/64.0; else if (idx==59) return 23.0/64.0;
+                else if (idx==60) return 61.0/64.0; else if (idx==61) return 29.0/64.0;
+                else if (idx==62) return 53.0/64.0; else return 21.0/64.0;
+            }
+
+            float random(vec2 st) {
+                return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+            }
+
+            void main() {
+                if (u_mode == 1) {
+                    vec4 color = texture2D(u_image, v_texCoord);
+                    if (u_colorMode == 0) {
+                        float gray = color.r;
+                        gl_FragColor = vec4(mix(u_bgColor, u_fgColor, gray), 1.0);
+                    } else {
+                        gl_FragColor = color;
+                    }
+                } else {
+                    vec2 uv = v_texCoord;
+                    vec2 pixelatedUV = floor(uv * u_resolution / u_pixelSize) * u_pixelSize / u_resolution;
+                    vec4 color = texture2D(u_image, pixelatedUV);
+                    vec2 pixelPos = floor(gl_FragCoord.xy);
+                    float bayerValue = bayer8x8(pixelPos);
+                    float noise = random(pixelPos * 0.01) * 0.1;
+                    bayerValue = mix(bayerValue, noise, 0.3);
+                    float effectiveThreshold = mix(0.5, bayerValue, u_ditherAmount);
+                    float levels = pow(2.0, u_bitDepth);
+                    #define BAYER_QUANTIZE(v) (floor((v) * levels + (1.0 - effectiveThreshold)) / levels)
+                    if (u_colorMode == 0) {
+                        float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+                        gray = clamp((gray - 0.5) * u_contrast + 0.5, 0.0, 1.0);
+                        float final = clamp(BAYER_QUANTIZE(gray), 0.0, 1.0);
+                        gl_FragColor = vec4(mix(u_bgColor, u_fgColor, final), 1.0);
+                    } else {
+                        vec3 rgb = clamp((color.rgb - 0.5) * u_contrast + 0.5, 0.0, 1.0);
+                        vec3 final = clamp(vec3(BAYER_QUANTIZE(rgb.r), BAYER_QUANTIZE(rgb.g), BAYER_QUANTIZE(rgb.b)), 0.0, 1.0);
+                        gl_FragColor = vec4(final, 1.0);
+                    }
+                }
+            }
+        `;
+
+        const vs = this.createShader(this.gl.VERTEX_SHADER, vertexShaderSource);
+        const fs = this.createShader(this.gl.FRAGMENT_SHADER, fragmentShaderSource);
+        if (!vs || !fs) return;
+        this.program = this.createProgram(vs, fs);
+        if (!this.program) return;
+
+        this.positionBuffer = this.gl.createBuffer();
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), this.gl.STATIC_DRAW);
+
+        this.texCoordBuffer = this.gl.createBuffer();
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.texCoordBuffer);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array([0,1,1,1,0,0,1,0]), this.gl.STATIC_DRAW);
+
+        this.texture = this.gl.createTexture();
+        this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+
+        // cache the uniform locations so they can easily be accessed....
+        this.gl.useProgram(this.program);
+        this.u = {
+            resolution:   this.gl.getUniformLocation(this.program, 'u_resolution'),
+            pixelSize:    this.gl.getUniformLocation(this.program, 'u_pixelSize'),
+            ditherAmount: this.gl.getUniformLocation(this.program, 'u_ditherAmount'),
+            bitDepth:     this.gl.getUniformLocation(this.program, 'u_bitDepth'),
+            contrast:     this.gl.getUniformLocation(this.program, 'u_contrast'),
+            fgColor:      this.gl.getUniformLocation(this.program, 'u_fgColor'),
+            bgColor:      this.gl.getUniformLocation(this.program, 'u_bgColor'),
+            mode:         this.gl.getUniformLocation(this.program, 'u_mode'),
+            colorMode:    this.gl.getUniformLocation(this.program, 'u_colorMode'),
+        };
+        this.a = {
+            position: this.gl.getAttribLocation(this.program, 'a_position'),
+            texCoord: this.gl.getAttribLocation(this.program, 'a_texCoord'),
+        };
+    }
+
+    createShader(type, source) {
+        const shader = this.gl.createShader(type);
+        if (!shader) return null;
+        this.gl.shaderSource(shader, source);
+        this.gl.compileShader(shader);
+        if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+            console.error('Shader error:', this.gl.getShaderInfoLog(shader));
+            this.gl.deleteShader(shader); return null;
+        }
+        return shader;
+    }
+
+    createProgram(vs, fs) {
+        const prog = this.gl.createProgram();
+        if (!prog) return null;
+        this.gl.attachShader(prog, vs); this.gl.attachShader(prog, fs);
+        this.gl.linkProgram(prog);
+        if (!this.gl.getProgramParameter(prog, this.gl.LINK_STATUS)) {
+            console.error('Link error:', this.gl.getProgramInfoLog(prog));
+            this.gl.deleteProgram(prog); return null;
+        }
+        return prog;
+    }
+
+    loadImage(src) {
+        this._loadGen = (this._loadGen || 0) + 1;
+        const gen = this._loadGen;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            if (gen !== this._loadGen) return; 
+            if (currentMode !== 'image') return; 
+            this.imgElement = img;
+            this.originalWidth = img.width; this.originalHeight = img.height;
+            this.aspectRatio = img.width / img.height;
+            this.updateCanvasSize(); updateResolutionDisplay();
+            // Seed image-mode resolution state
+            imageResState = {
+                originalWidth: img.width, originalHeight: img.height,
+                aspectRatio: img.width / img.height, scale: this.params.scale,
+                canvasW: this.canvas.width, canvasH: this.canvas.height
+            };
+            this.lastRenderedAlgo = null; this.render();
+        };
+        img.onerror = () => alert('Failed to load image.');
+        img.src = src;
+    }
+
+    setSourceSize(w, h) {
+        this.originalWidth = w; this.originalHeight = h;
+        this.aspectRatio = w / h;
+        this.canvas.width  = Math.floor(w * this.params.scale);
+        this.canvas.height = Math.floor(h * this.params.scale);
+        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        // Seed video-mode resolution state
+        videoResState = {
+            originalWidth: w, originalHeight: h, aspectRatio: w / h,
+            scale: this.params.scale,
+            canvasW: this.canvas.width, canvasH: this.canvas.height
+        };
+        updateResolutionDisplay();
+    }
+
+    updateCanvasSize() {
+        this.canvas.width  = Math.floor(this.originalWidth  * this.params.scale);
+        this.canvas.height = Math.floor(this.originalHeight * this.params.scale);
+        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    hexToRgb(hex) {
+        const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        if (!r) return [0,0,0];
+        return [parseInt(r[1],16)/255, parseInt(r[2],16)/255, parseInt(r[3],16)/255];
+    }
+
+ // Atkinson & Floyd cpu helpers
+    _prepareCanvas(source) {
+        const pSize = Math.max(1, this.params.pixelSize);
+        const procW = Math.max(1, Math.floor(this.canvas.width  / pSize));
+        const procH = Math.max(1, Math.floor(this.canvas.height / pSize));
+        this.fsCanvas.width = procW; this.fsCanvas.height = procH;
+        const ctx = this.fsCanvas.getContext('2d');
+        ctx.drawImage(source, 0, 0, procW, procH);
+        return { ctx, procW, procH, imageData: ctx.getImageData(0,0,procW,procH) };
+    }
+
+    computeFloydSteinberg(source) {
+        source = source || this.imgElement;
+        if (!source) return null;
+        const { procW, procH, imageData } = this._prepareCanvas(source);
+        const data = imageData.data;
+        const W = procW, H = procH;
+        const contrast = this.params.contrast;
+        const levels = Math.pow(2, this.params.bitDepth) - 1;
+        const ditherAmt = this.params.ditherAmount;
+
+        const softBlend = (arr) => {
+            const blurred = new Float32Array(arr.length);
+            for (let y=0;y<H;y++) for (let x=0;x<W;x++) {
+                const idx = y*W+x;
+                let s=arr[idx]*4, c=4;
+                if(x>0){s+=arr[idx-1];c++;} if(x<W-1){s+=arr[idx+1];c++;}
+                if(y>0){s+=arr[idx-W];c++;} if(y<H-1){s+=arr[idx+W];c++;}
+                blurred[idx]=s/c;
+            }
+            // blend back into arr without corrupting values used by the FS pass
+            for(let i=0;i<arr.length;i++) arr[i]=arr[i]*0.8+blurred[i]*0.2;
+        };
+
+        const fsPass = (chan) => {
+            for (let y=0;y<H;y++) {
+                const dir = (y%2===0)?1:-1;
+                const xs = (y%2===0)?0:W-1, xe=(y%2===0)?W:-1;
+                for (let x=xs;x!==xe;x+=dir) {
+                    const idx=y*W+x, old=chan[idx];
+                    const nw=Math.round(old*levels)/levels;
+                    chan[idx]=nw;
+                    const err=(old-nw)*ditherAmt;
+                    if(x+dir>=0&&x+dir<W) chan[idx+dir]+=err*(7/16);
+                    if(y+1<H){
+                        if(x-dir>=0&&x-dir<W) chan[idx+W-dir]+=err*(3/16);
+                        chan[idx+W]+=err*(5/16);
+                        if(x+dir>=0&&x+dir<W) chan[idx+W+dir]+=err*(1/16);
+                    }
+                }
+            }
+        };
+
+        if (this.params.colorMode === 'bw') {
+            const gray = new Float32Array(W*H);
+            for(let i=0;i<data.length;i+=4) {
+                let g=(data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114)/255;
+                g=Math.max(0,Math.min(1,(g-0.5)*contrast+0.5));
+                gray[i/4]=g;
+            }
+            softBlend(gray); fsPass(gray);
+            for(let i=0;i<gray.length;i++){
+                const v=Math.floor(Math.max(0,Math.min(1,gray[i]))*255);
+                data[i*4]=data[i*4+1]=data[i*4+2]=v; data[i*4+3]=255;
+            }
+        } else {
+            const rD=new Float32Array(W*H), gD=new Float32Array(W*H), bD=new Float32Array(W*H);
+            for(let i=0;i<data.length;i+=4){
+                const idx=i/4;
+                rD[idx]=Math.max(0,Math.min(1,(data[i]  /255-0.5)*contrast+0.5));
+                gD[idx]=Math.max(0,Math.min(1,(data[i+1]/255-0.5)*contrast+0.5));
+                bD[idx]=Math.max(0,Math.min(1,(data[i+2]/255-0.5)*contrast+0.5));
+            }
+            softBlend(rD); softBlend(gD); softBlend(bD);
+            fsPass(rD); fsPass(gD); fsPass(bD);
+            for(let i=0;i<rD.length;i++){
+                data[i*4  ]=Math.floor(Math.max(0,Math.min(1,rD[i]))*255);
+                data[i*4+1]=Math.floor(Math.max(0,Math.min(1,gD[i]))*255);
+                data[i*4+2]=Math.floor(Math.max(0,Math.min(1,bD[i]))*255);
+                data[i*4+3]=255;
+            }
+        }
+        return imageData;
+    }
+
+    computeAtkinson(source) {
+        source = source || this.imgElement;
+        if (!source) return null;
+        const { procW, procH, imageData } = this._prepareCanvas(source);
+        const data = imageData.data;
+        const W = procW, H = procH;
+        const contrast = this.params.contrast;
+        const levels = Math.pow(2, this.params.bitDepth) - 1;
+        const ditherAmt = this.params.ditherAmount;
+
+        const diffuse = (chan, x, y, err) => {
+            const e = err * ditherAmt / 8;
+            [[x+1,y],[x+2,y],[x-1,y+1],[x,y+1],[x+1,y+1],[x,y+2]].forEach(([nx,ny])=>{
+                if(nx>=0&&nx<W&&ny>=0&&ny<H) chan[ny*W+nx]+=e;
+            });
+        };
+
+        if (this.params.colorMode === 'bw') {
+            const gray = new Float32Array(W*H);
+            for(let i=0;i<data.length;i+=4) {
+                let g=(data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114)/255;
+                gray[i/4]=Math.max(0,Math.min(1,(g-0.5)*contrast+0.5));
+            }
+            for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+                const idx=y*W+x, old=gray[idx], nw=Math.round(old*levels)/levels;
+                gray[idx]=nw; diffuse(gray,x,y,old-nw);
+            }
+            for(let i=0;i<gray.length;i++){
+                const v=Math.floor(Math.max(0,Math.min(1,gray[i]))*255);
+                data[i*4]=data[i*4+1]=data[i*4+2]=v; data[i*4+3]=255;
+            }
+        } else {
+            const rD=new Float32Array(W*H), gD=new Float32Array(W*H), bD=new Float32Array(W*H);
+            for(let i=0;i<data.length;i+=4){
+                const idx=i/4;
+                rD[idx]=Math.max(0,Math.min(1,(data[i]  /255-0.5)*contrast+0.5));
+                gD[idx]=Math.max(0,Math.min(1,(data[i+1]/255-0.5)*contrast+0.5));
+                bD[idx]=Math.max(0,Math.min(1,(data[i+2]/255-0.5)*contrast+0.5));
+            }
+            for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+                const idx=y*W+x;
+                const oR=rD[idx],nR=Math.round(oR*levels)/levels; rD[idx]=nR; diffuse(rD,x,y,oR-nR);
+                const oG=gD[idx],nG=Math.round(oG*levels)/levels; gD[idx]=nG; diffuse(gD,x,y,oG-nG);
+                const oB=bD[idx],nB=Math.round(oB*levels)/levels; bD[idx]=nB; diffuse(bD,x,y,oB-nB);
+            }
+            for(let i=0;i<rD.length;i++){
+                data[i*4  ]=Math.floor(Math.max(0,Math.min(1,rD[i]))*255);
+                data[i*4+1]=Math.floor(Math.max(0,Math.min(1,gD[i]))*255);
+                data[i*4+2]=Math.floor(Math.max(0,Math.min(1,bD[i]))*255);
+                data[i*4+3]=255;
+            }
+        }
+        return imageData;
+    }
+
+
+    renderFrame(source) {
+        if (!this.gl || !this.program) return;
+        const src = source || this.imgElement;
+        if (!src) return;
+
+        const gl = this.gl;
+        gl.useProgram(this.program);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.enableVertexAttribArray(this.a.position);
+        gl.vertexAttribPointer(this.a.position, 2, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.enableVertexAttribArray(this.a.texCoord);
+        gl.vertexAttribPointer(this.a.texCoord, 2, gl.FLOAT, false, 0, 0);
+
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+
+        if (this.params.algorithm === 'fs' || this.params.algorithm === 'atkinson') {
+            const fn = this.params.algorithm === 'fs' ? 'computeFloydSteinberg' : 'computeAtkinson';
+            const fsData = this[fn](src);
+            if (fsData) {
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fsData);
+            }
+            gl.uniform1i(this.u.mode, 1);
+        } else {
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+            gl.uniform1i(this.u.mode, 0);
+        }
+
+        // Use cached uniform locations
+        gl.uniform2f(this.u.resolution, this.canvas.width, this.canvas.height);
+        gl.uniform1f(this.u.pixelSize, this.params.pixelSize);
+        gl.uniform1f(this.u.ditherAmount, this.params.ditherAmount);
+        gl.uniform1f(this.u.bitDepth, this.params.bitDepth);
+        gl.uniform1f(this.u.contrast, this.params.contrast);
+
+        const fg = this.hexToRgb(this.params.fgColor);
+        const bg = this.hexToRgb(this.params.bgColor);
+        gl.uniform3f(this.u.fgColor, fg[0], fg[1], fg[2]);
+        gl.uniform3f(this.u.bgColor, bg[0], bg[1], bg[2]);
+        gl.uniform1i(this.u.colorMode, this.params.colorMode==='color' ? 1 : 0);
+
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    render() { this.renderFrame(null); }
+
+    updateParams(newParams) {
+        const needsResize = newParams.scale !== undefined && newParams.scale !== this.params.scale;
+        const colorModeChanged = newParams.colorMode !== undefined && newParams.colorMode !== this.params.colorMode;
+        Object.assign(this.params, newParams);
+        this.savePreferences();
+        if (colorModeChanged) updateColorControlsVisibility();
+        if (needsResize) {
+            this.updateCanvasSize(); updateResolutionDisplay();
+            // Persist scale/canvas size into per-mode state
+            var stateKey = currentMode === 'image' ? 'imageResState' : 'videoResState';
+            if (window[stateKey]) {
+                window[stateKey].scale   = this.params.scale;
+                window[stateKey].canvasW = this.canvas.width;
+                window[stateKey].canvasH = this.canvas.height;
+            }
+        }
+        if (currentMode === 'image') this.render();
+        else if (currentMode === 'video' && videoEl) this.renderFrame(videoEl);
+    }
+}
+
+// video processing system 
+var videoEl = null;
+var videoRafId = null;
+var isVideoPlaying = false;
+var progressDragging = false;
+var exportSourceFile = null;
+var audioCtx = null;
+var audioSource = null;
+var audioFilter = null;
+var audioGain = null;
+
+function loadVideoFile(file) {
+    exportSourceFile = file;
+    if (videoEl) {
+        stopVideoPlayback();
+        URL.revokeObjectURL(videoEl.src);
+        videoEl = null;
+    }
+
+    videoEl = document.createElement('video');
+    videoEl.crossOrigin = 'anonymous';
+    videoEl.preload = 'auto';
+    videoEl.muted = false;
+    videoEl.src = URL.createObjectURL(file);
+
+    videoEl.addEventListener('loadedmetadata', () => {
+        ditherer.setSourceSize(videoEl.videoWidth, videoEl.videoHeight);
+        document.getElementById('videoProgress').max = videoEl.duration;
+        updateTimecode();
+        videoEl.currentTime = 0;
+
+
+        document.getElementById('videoPlaceholder').style.display = 'none';
+        document.getElementById('canvas').style.display = 'block';
+        setControlsEnabled(true);
+
+        // Set up Web Audio routing for live playback kHz filtering
+        if (audioCtx) { try { audioCtx.close(); } catch(e) {} }
+        audioCtx = new AudioContext();
+        audioSource = audioCtx.createMediaElementSource(videoEl);
+        audioFilter = audioCtx.createBiquadFilter();
+        audioFilter.type = 'lowpass';
+        audioGain = audioCtx.createGain();
+        audioSource.connect(audioFilter);
+        audioFilter.connect(audioGain);
+        audioGain.connect(audioCtx.destination);
+        updatePlaybackAudio();
+    });
+
+    videoEl.addEventListener('seeked', () => {
+        if (!isVideoPlaying && currentMode === 'video') {
+            ditherer.renderFrame(videoEl);
+        }
+    });
+
+    videoEl.addEventListener('ended', () => {
+        isVideoPlaying = false;
+        document.getElementById('playPauseBtn').textContent = 'Play';
+        cancelAnimationFrame(videoRafId);
+    });
+}
+var lastVideoTime = -1;
+
+function videoLoopRVFC() {
+    if (!videoEl || !isVideoPlaying || currentMode !== 'video') return;
+    ditherer.renderFrame(videoEl);
+    updateTimecode();
+    if (!progressDragging) document.getElementById('videoProgress').value = videoEl.currentTime;
+    if (!videoEl.paused && !videoEl.ended) {
+        videoEl.requestVideoFrameCallback(videoLoopRVFC);
+    }
+}
+
+function videoLoopRAF() {
+    if (!videoEl || videoEl.paused || videoEl.ended || currentMode !== 'video') return;
+    if (videoEl.currentTime !== lastVideoTime) {
+        lastVideoTime = videoEl.currentTime;
+        ditherer.renderFrame(videoEl);
+        updateTimecode();
+        if (!progressDragging) document.getElementById('videoProgress').value = videoEl.currentTime;
+    }
+    videoRafId = requestAnimationFrame(videoLoopRAF);
+}
+
+function startVideoLoop() {
+    if (typeof videoEl.requestVideoFrameCallback === 'function') {
+        videoEl.requestVideoFrameCallback(videoLoopRVFC);
+    } else {
+        lastVideoTime = -1;
+        videoRafId = requestAnimationFrame(videoLoopRAF);
+    }
+}
+
+function togglePlayPause() {
+    if (!videoEl) return;
+    if (isVideoPlaying) {
+        videoEl.pause();
+        isVideoPlaying = false;
+        document.getElementById('playPauseBtn').textContent = 'Play';
+        cancelAnimationFrame(videoRafId);
+    } else {
+        videoEl.play();
+        isVideoPlaying = true;
+        document.getElementById('playPauseBtn').textContent = 'Pause';
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        startVideoLoop();
+    }
+}
+
+function stopVideo() {
+    if (!videoEl) return;
+    videoEl.pause();
+    videoEl.currentTime = 0;
+    isVideoPlaying = false;
+    document.getElementById('playPauseBtn').textContent = 'Play';
+    cancelAnimationFrame(videoRafId);
+    if (currentMode === 'video') ditherer.renderFrame(videoEl);
+    document.getElementById('videoProgress').value = 0;
+    updateTimecode();
+}
+
+function stopVideoPlayback() {
+    if (videoEl) videoEl.pause();
+    isVideoPlaying = false;
+    cancelAnimationFrame(videoRafId);
+    document.getElementById('playPauseBtn').textContent = 'Play';
+}
+
+
+function updatePlaybackAudio() {
+    if (!audioCtx || !audioFilter || !audioGain) return;
+    // Always attempt to resume — browsers silently ignore this if already running.
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    var val = radioGroup('exportAudio').value;
+    if (val === 'none') {
+        audioGain.gain.value = 0;
+    } else {
+        audioGain.gain.value = 1;
+        // Lowpass cutoff = Nyquist of the chosen sample rate, which rolls off
+        // everything the target codec couldn't encode (5.5 kHz for 11 kHz, etc.)
+        audioFilter.frequency.value = parseInt(val) / 2;
+    }
+}
+
+function updateTimecode() {
+    if (!videoEl) return;
+    const fmt = (t) => {
+        const m = Math.floor(t/60), s = Math.floor(t%60);
+        return m + ':' + String(s).padStart(2,'0');
+    };
+    document.getElementById('videoTimecode').textContent =
+        fmt(videoEl.currentTime) + ' / ' + fmt(videoEl.duration || 0);
+}
+
+const progressEl = document.getElementById('videoProgress');
+progressEl.addEventListener('mousedown', () => { progressDragging = true; });
+progressEl.addEventListener('input', () => {
+    if (videoEl) { videoEl.currentTime = parseFloat(progressEl.value); updateTimecode(); }
+});
+progressEl.addEventListener('mouseup', () => { progressDragging = false; });
+
+function pickMimeType(format, withAudio) {
+    if (format === 'mp4') {
+        const mp4 = withAudio
+            ? ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=h264,aac', 'video/mp4']
+            : ['video/mp4;codecs=avc1', 'video/mp4;codecs=h264', 'video/mp4'];
+        for (const t of mp4) {
+            if (MediaRecorder.isTypeSupported(t)) return { mimeType: t, ext: 'mp4' };
+        }
+        alert('MP4/H.264 export is not supported in this browser.\nFalling back to WebM.\n\nMP4 support requires Chrome 130+ or Safari 17.4+.');
+    }
+    const webm = withAudio
+        ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,vorbis', 'video/webm;codecs=vp8,vorbis', 'video/webm']
+        : ['video/webm;codecs=vp9',      'video/webm;codecs=vp8',      'video/webm'];
+    for (const t of webm) {
+        if (MediaRecorder.isTypeSupported(t)) return { mimeType: t, ext: 'webm' };
+    }
+    return { mimeType: 'video/webm', ext: 'webm' };
+}
+
+function setExportProgress(label, pct) {
+    document.getElementById('exportProgressLabel').textContent = label;
+    document.getElementById('exportProgressFill').style.width = pct + '%';
+}
+async function buildAudioStream(file, targetSampleRate) {
+    setExportProgress('Decoding audio…', 0);
+    const arrayBuf = await file.arrayBuffer();
+
+
+    const probeCtx   = new AudioContext();
+    const nativeRate = probeCtx.sampleRate;
+    await probeCtx.close();
+
+
+    const decodeCtx = new AudioContext({ sampleRate: nativeRate });
+    let decoded;
+    try {
+        decoded = await decodeCtx.decodeAudioData(arrayBuf);
+    } catch(e) {
+        await decodeCtx.close();
+        console.warn('Audio decode failed (maybe no audio track?):', e);
+        return null;
+    }
+    await decodeCtx.close();
+
+    const numChannels = Math.min(decoded.numberOfChannels, 2);
+    const duration    = decoded.duration;
+
+
+    const lofiFrames = Math.ceil(duration * targetSampleRate);
+    const lofiCtx    = new OfflineAudioContext(numChannels, lofiFrames, targetSampleRate);
+    const lofiBuf    = lofiCtx.createBuffer(numChannels, decoded.length, decoded.sampleRate);
+    for (let c = 0; c < numChannels; c++) lofiBuf.copyToChannel(decoded.getChannelData(c), c);
+    const lofiSrc = lofiCtx.createBufferSource();
+    lofiSrc.buffer = lofiBuf;
+    lofiSrc.connect(lofiCtx.destination);
+    lofiSrc.start(0);
+    const lofi = await lofiCtx.startRendering();
+
+
+    const nativeFrames = Math.ceil(duration * nativeRate);
+    const upCtx        = new OfflineAudioContext(numChannels, nativeFrames, nativeRate);
+    const upBuf        = upCtx.createBuffer(numChannels, lofi.length, targetSampleRate);
+    for (let c = 0; c < numChannels; c++) upBuf.copyToChannel(lofi.getChannelData(c), c);
+    const upSrc = upCtx.createBufferSource();
+    upSrc.buffer = upBuf;
+    upSrc.connect(upCtx.destination);
+    upSrc.start(0);
+    const upsampled = await upCtx.startRendering();
+
+
+    const liveCtx = new AudioContext({ sampleRate: nativeRate });
+    const dest    = liveCtx.createMediaStreamDestination();
+    const bufSize = 4096;
+    const proc    = liveCtx.createScriptProcessor(bufSize, 0, numChannels);
+    let readPos   = 0;
+
+    proc.onaudioprocess = (e) => {
+        for (let c = 0; c < numChannels; c++) {
+            const out = e.outputBuffer.getChannelData(c);
+            const inp = upsampled.getChannelData(c);
+            for (let i = 0; i < bufSize; i++) {
+                out[i] = (readPos + i < inp.length) ? inp[readPos + i] : 0;
+            }
+        }
+        readPos += bufSize;
+    };
+
+    proc.connect(dest);
+    return { stream: dest.stream, ctx: liveCtx, proc, numChannels };
+}
+
+function setControlsEnabled(enabled) {
+    const ids = ['pixelSize','ditherAmount','bitDepth','contrast','scale',
+                 'fgColor','bgColor','targetWidth','targetHeight','playPauseBtn','stopBtn','videoProgress'];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !enabled;
+    });
+    // Disable all radio buttons in controls and video sections
+    document.querySelectorAll('.controls-section input, #videoControlsSection input[type="radio"]').forEach(el => {
+        el.disabled = !enabled;
+    });
+    const exportBtn = document.querySelector('#videoControlsSection button[onclick="exportVideo()"]');
+    if (exportBtn) exportBtn.disabled = !enabled;
+}
+
+async function exportVideo() {
+    if (!videoEl) { alert('No video loaded.'); return; }
+    if (isVideoPlaying) { videoEl.pause(); isVideoPlaying = false; cancelAnimationFrame(videoRafId); }
+    setControlsEnabled(false);
+
+    const format      = radioGroup('exportFormat').value;
+    const fps         = parseInt(radioGroup('exportFps').value, 10);
+    const audioRate   = parseInt(radioGroup('exportAudio').value, 10);
+    const withAudio   = audioRate > 0;
+    const { mimeType, ext } = pickMimeType(format, withAudio);
+    const duration    = videoEl.duration;
+    const totalFrames = Math.ceil(duration * fps);
+
+    document.getElementById('exportProgress').style.display = 'block';
+    setExportProgress('Starting…', 0);
+    if (audioGain) audioGain.gain.value = 0;
+
+
+    let audioHandle = null;
+    if (withAudio) {
+        if (!exportSourceFile) {
+            alert('Audio export requires the original file. Please reload the video using the file picker.\nExporting without audio.');
+            // audioHandle stays null and export continues without audio
+        } else {
+            try {
+                audioHandle = await buildAudioStream(exportSourceFile, audioRate);
+            } catch(e) {
+                console.warn('Audio setup failed, exporting without audio:', e);
+                audioHandle = null;
+            }
+        }
+    }
+
+
+    let stream;
+    try { stream = ditherer.canvas.captureStream(fps); }
+    catch(e) {
+        alert('canvas.captureStream() not supported. Try Chrome or Edge.');
+        document.getElementById('exportProgress').style.display = 'none';
+        if (audioHandle) {
+            audioHandle.proc.disconnect();
+            audioHandle.ctx.close();
+        }
+        return;
+    }
+
+    if (audioHandle) {
+        audioHandle.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    }
+
+    const chunks = [];
+    const recorder = new MediaRecorder(stream, { mimeType });
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    const donePromise = new Promise(resolve => { recorder.onstop = resolve; });
+    videoEl.currentTime = 0;
+    await new Promise(r => videoEl.addEventListener('seeked', r, { once: true }));
+    recorder.start(100);
+
+
+    const useRVFC = typeof videoEl.requestVideoFrameCallback === 'function';
+    if (useRVFC) {
+        let framesDone = 0;
+        await new Promise((resolve, reject) => {
+            let resolved = false;
+
+            const onFrame = (_now, meta) => {
+                if (resolved) return;
+                ditherer.renderFrame(videoEl);
+                framesDone++;
+                const pct = Math.min(99, Math.round((meta.mediaTime / duration) * 100));
+                setExportProgress('Rendering frame ' + framesDone + ' (' + pct + '%)…', pct);
+
+                if (!videoEl.ended && meta.mediaTime < duration - 0.1) {
+                    videoEl.requestVideoFrameCallback(onFrame);
+                } else {
+                    resolved = true;
+                    resolve();
+                }
+            };
+
+            videoEl.addEventListener('ended', () => {
+                if (!resolved) { resolved = true; resolve(); }
+            }, { once: true });
+
+            videoEl.requestVideoFrameCallback(onFrame);
+            videoEl.muted = false;
+            videoEl.play().catch(reject);
+        });
+
+        videoEl.pause();
+
+    } else {
+        const frameDuration = 1 / fps;
+        for (let f = 0; f < totalFrames; f++) {
+            videoEl.currentTime = Math.min(f * frameDuration, duration - 0.001);
+            await new Promise(r => videoEl.addEventListener('seeked', r, { once: true }));
+            ditherer.renderFrame(videoEl);
+            const pct = Math.round(((f + 1) / totalFrames) * 100);
+            setExportProgress('Rendering frame ' + (f + 1) + ' of ' + totalFrames + ' (' + pct + '%)', pct);
+        }
+    }
+
+    setExportProgress('Finalising…', 100);
+
+    if (audioHandle) {
+        audioHandle.proc.disconnect();
+        audioHandle.stream.getAudioTracks().forEach(t => t.stop());
+    }
+    recorder.stop();
+
+
+    await Promise.race([
+        donePromise,
+        new Promise(resolve => setTimeout(resolve, 2000))
+    ]);
+
+    if (audioHandle) audioHandle.ctx.close();
+
+    const blob = new Blob(chunks, { type: mimeType });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = 'dithered-video.' + ext;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+    document.getElementById('exportProgress').style.display = 'none';
+    document.getElementById('exportProgressLabel').textContent = 'Rendering…';
+    document.getElementById('exportProgressFill').style.width = '0%';
+
+    setControlsEnabled(true);
+    updatePlaybackAudio();
+
+    videoEl.currentTime = 0;
+    await new Promise(r => videoEl.addEventListener('seeked', r, { once: true }));
+    ditherer.renderFrame(videoEl);
+    document.getElementById('videoProgress').value = 0;
+    updateTimecode();
+}
+
+// wire controls to the javascript elements
+var ditherer = new ImageDitherer('canvas');
+var isUpdatingResolutionInputs = false;
+
+// Helper to get/set radio group values like a select element
+function radioGroup(name) {
+    return {
+        get value() {
+            var checked = document.querySelector('input[name="' + name + '"]:checked');
+            return checked ? checked.value : null;
+        },
+        set value(v) {
+            var radio = document.querySelector('input[name="' + name + '"][value="' + v + '"]');
+            if (radio) radio.checked = true;
+        },
+        addEventListener: function(event, fn) {
+            document.querySelectorAll('input[name="' + name + '"]').forEach(function(r) {
+                r.addEventListener(event === 'input' ? 'change' : event, fn);
+            });
+        },
+        get tagName() { return 'RADIOGROUP'; }
+    };
+}
+
+var controls = {
+    algorithm: radioGroup('algorithm'),
+    colorMode: radioGroup('colorMode'),
+    pixelSize: document.getElementById('pixelSize'),
+    ditherAmount: document.getElementById('ditherAmount'),
+    bitDepth: document.getElementById('bitDepth'),
+    contrast: document.getElementById('contrast'),
+    scale: document.getElementById('scale'),
+    fgColor: document.getElementById('fgColor'),
+    bgColor: document.getElementById('bgColor'),
+    imageInput: document.getElementById('imageInput')
+};
+
+var valueDisplays = {
+    pixelSize: document.getElementById('pixelSizeValue'),
+    ditherAmount: document.getElementById('ditherAmountValue'),
+    bitDepth: document.getElementById('bitDepthValue'),
+    contrast: document.getElementById('contrastValue'),
+    scale: document.getElementById('scaleValue')
+};
+
+function updateColorControlsVisibility() {
+    document.getElementById('bwColorControls').style.display =
+        ditherer.params.colorMode === 'color' ? 'none' : 'block';
+}
+
+function setupControl(key) {
+    if (key === 'imageInput') return;
+    controls[key].addEventListener('input', function(e) {
+        var value = (e.target.type === 'color' || e.target.tagName === 'SELECT' || e.target.type === 'radio')
+            ? e.target.value : parseFloat(e.target.value);
+        if (valueDisplays[key]) valueDisplays[key].textContent = value;
+        var p = {}; p[key] = value;
+        ditherer.updateParams(p);
+    });
+}
+for (var key in controls) setupControl(key);
+
+function restoreUIFromPreferences() {
+    controls.algorithm.value = ditherer.params.algorithm;
+    controls.colorMode.value = ditherer.params.colorMode;
+    controls.pixelSize.value = ditherer.params.pixelSize;
+    controls.ditherAmount.value = ditherer.params.ditherAmount;
+    controls.bitDepth.value = ditherer.params.bitDepth;
+    controls.contrast.value = ditherer.params.contrast;
+    controls.scale.value = ditherer.params.scale;
+    controls.fgColor.value = ditherer.params.fgColor;
+    controls.bgColor.value = ditherer.params.bgColor;
+    valueDisplays.pixelSize.textContent = ditherer.params.pixelSize;
+    valueDisplays.ditherAmount.textContent = ditherer.params.ditherAmount;
+    valueDisplays.bitDepth.textContent = ditherer.params.bitDepth;
+    valueDisplays.contrast.textContent = ditherer.params.contrast;
+    valueDisplays.scale.textContent = ditherer.params.scale;
+    updateColorControlsVisibility();
+}
+restoreUIFromPreferences();
+
+controls.imageInput.addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) { ditherer.loadImage(ev.target.result); };
+    reader.readAsDataURL(file);
+});
+
+document.getElementById('videoInput').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    loadVideoFile(file);
+});
+
+radioGroup('exportAudio').addEventListener('change', updatePlaybackAudio);
+
+// drag-and-drop support, scoped to the output box only
+(function() {
+    var outputSection = document.querySelector('.image-section');
+    var overlay = document.getElementById('dropOverlay');
+    function sizeOverlayToOutput() {
+        var canvasContainer = document.querySelector('.canvas-container');
+        var videoPlaceholder = document.getElementById('videoPlaceholder');
+        var target = (videoPlaceholder.offsetParent !== null && videoPlaceholder.offsetWidth > 0) ? videoPlaceholder : canvasContainer;
+        var rect = target.getBoundingClientRect();
+        var parentRect = outputSection.getBoundingClientRect();
+        overlay.style.left   = (rect.left   - parentRect.left)  + 'px';
+        overlay.style.top    = (rect.top    - parentRect.top)   + 'px';
+        overlay.style.width  = rect.width  + 'px';
+        overlay.style.height = rect.height + 'px';
+    }
+
+    outputSection.addEventListener('dragenter', function(e) {
+        e.preventDefault();
+        sizeOverlayToOutput();
+        overlay.textContent = currentMode === 'video' ? 'Drop video here.' : 'Drop image here.';
+        overlay.classList.add('active');
+    });
+
+    outputSection.addEventListener('dragleave', function(e) {
+        // Only hide when leaving the section entirely (not just moving between children)
+        if (!outputSection.contains(e.relatedTarget)) {
+            overlay.classList.remove('active');
+        }
+    });
+
+    outputSection.addEventListener('dragover', function(e) {
+        e.preventDefault();
+    });
+
+    outputSection.addEventListener('drop', function(e) {
+        e.preventDefault();
+        overlay.classList.remove('active');
+        var file = e.dataTransfer.files[0];
+        if (!file) return;
+        if (file.type.startsWith('video/')) {
+            switchMode('video');
+            loadVideoFile(file);
+        } else if (file.type.startsWith('image/')) {
+            switchMode('image');
+            var reader = new FileReader();
+            reader.onload = function(ev) { ditherer.loadImage(ev.target.result); };
+            reader.readAsDataURL(file);
+        }
+    });
+})();
+
+// some image processing utils
+function loadSampleImage() {
+    switchMode('image');
+    var tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = 400; tmpCanvas.height = 400;
+    var ctx = tmpCanvas.getContext('2d');
+    var grad = ctx.createRadialGradient(200,200,0,200,200,200);
+    grad.addColorStop(0,'#ffffff'); grad.addColorStop(0.5,'#888888'); grad.addColorStop(1,'#000000');
+    ctx.fillStyle = grad; ctx.fillRect(0,0,400,400);
+    for (var i=0;i<20;i++) {
+        ctx.beginPath();
+        ctx.arc(Math.random()*400, Math.random()*400, Math.random()*30+10, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba('+Math.floor(Math.random()*255)+','+Math.floor(Math.random()*255)+','+Math.floor(Math.random()*255)+','+(Math.random()*0.5+0.3)+')';
+        ctx.fill();
+    }
+    ditherer.loadImage(tmpCanvas.toDataURL());
+}
+
+function exportImage() {
+    var canvas = document.getElementById('canvas');
+    if (canvas.width===0||canvas.height===0) { alert('No image loaded.'); return; }
+    var a = document.createElement('a');
+    a.download = 'dithered-image.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+}
+
+function updateResolutionDisplay() {
+    isUpdatingResolutionInputs = true;
+    document.getElementById('originalResolution').textContent =
+        ditherer.originalWidth + ' × ' + ditherer.originalHeight + ' px';
+    document.getElementById('outputResolution').textContent =
+        ditherer.canvas.width + ' × ' + ditherer.canvas.height + ' px';
+    document.getElementById('targetWidth').value = ditherer.canvas.width;
+    document.getElementById('targetHeight').value = ditherer.canvas.height;
+    setTimeout(function() { isUpdatingResolutionInputs = false; }, 0);
+}
+
+function applyCustomResolution() {
+    var w = parseInt(document.getElementById('targetWidth').value);
+    var h = parseInt(document.getElementById('targetHeight').value);
+    if (!w||!h||w<1||h<1) return;
+    var prevAspect = ditherer.aspectRatio; // preserve for aspect-lock
+    ditherer.originalWidth = w;
+    ditherer.originalHeight = h;
+    ditherer.aspectRatio = prevAspect;
+    ditherer.params.scale = 1.0;
+    ditherer.canvas.width = w;
+    ditherer.canvas.height = h;
+    ditherer.gl.viewport(0, 0, w, h);
+    ditherer.lastRenderedAlgo = null;
+    document.getElementById('scale').value = 1.0;
+    document.getElementById('scaleValue').textContent = '1.0';
+    var stateKey = currentMode === 'image' ? 'imageResState' : 'videoResState';
+    window[stateKey] = { originalWidth: w, originalHeight: h, aspectRatio: prevAspect, scale: 1.0, canvasW: w, canvasH: h };
+    if (currentMode === 'video' && videoEl) ditherer.renderFrame(videoEl); else ditherer.render();
+    updateResolutionDisplay();
+}
+
+function resetResolution() {
+    ditherer.params.scale = 1.0;
+    document.getElementById('scale').value = 1.0;
+    document.getElementById('scaleValue').textContent = '1.0';
+    ditherer.updateCanvasSize();
+    // Persist into per-mode state
+    var stateKey = currentMode === 'image' ? 'imageResState' : 'videoResState';
+    if (window[stateKey]) {
+        window[stateKey].scale   = 1.0;
+        window[stateKey].canvasW = ditherer.canvas.width;
+        window[stateKey].canvasH = ditherer.canvas.height;
+    }
+    if (currentMode === 'video' && videoEl) ditherer.renderFrame(videoEl); else ditherer.render();
+    updateResolutionDisplay();
+}
+
+document.getElementById('targetWidth').addEventListener('input', function(e) {
+    if (isUpdatingResolutionInputs) return;
+    if (document.getElementById('maintainAspect').checked) {
+        var w = parseInt(e.target.value);
+        if (w>0) document.getElementById('targetHeight').value = Math.round(w/ditherer.aspectRatio);
+    }
+    applyCustomResolution();
+});
+document.getElementById('targetHeight').addEventListener('input', function(e) {
+    if (isUpdatingResolutionInputs) return;
+    if (document.getElementById('maintainAspect').checked) {
+        var h = parseInt(e.target.value);
+        if (h>0) document.getElementById('targetWidth').value = Math.round(h*ditherer.aspectRatio);
+    }
+    applyCustomResolution();
+});
+const btn = document.getElementById("theme-toggle");
+const currentTheme = localStorage.getItem("theme");
+
+// Apply the saved theme on page load
+if (currentTheme === "dark") {
+  document.body.classList.add("dark-mode");
+}
+
+btn.addEventListener("click", function() {
+  // Toggle the class on the body
+  document.body.classList.toggle("dark-mode");
+  
+  // Save the preference
+  let theme = "light";
+  if (document.body.classList.contains("dark-mode")) {
+    theme = "dark";
+  }
+  localStorage.setItem("theme", theme);
+});
+
+loadSampleImage();
+</script>
+</body>
+</html>
