@@ -10,7 +10,7 @@ This is a Nuxt rewrite of [landonjsmith/DitherSpace](https://github.com/landonjs
 
 - Nuxt 4 / Vue 3 / TypeScript
 - Tailwind CSS 4
-- WebGL fragment shader (Bayer) + CPU pipelines (Floyd–Steinberg, Atkinson)
+- WebGL fragment shader (Bayer, blue noise, halftone) + CPU pipelines (Floyd–Steinberg, Atkinson)
 - `MediaRecorder` for video export
 
 ## Setup
@@ -30,6 +30,8 @@ bun run preview
 
 ### Algorithms
 - **Bayer 8×8 (WebGL)** — GPU-accelerated ordered dithering, real-time.
+- **Blue noise (WebGL)** — Interleaved Gradient Noise threshold pattern; less grid-y than Bayer at the same bit depth.
+- **Halftone (WebGL)** — luminance-driven circular dot screen; works in B&W and color (per-channel dots).
 - **Floyd–Steinberg (CPU)** — error diffusion with a 4-neighbor kernel (7/16, 3/16, 5/16, 1/16).
 - **Atkinson (CPU)** — classic Mac-style 6-neighbor kernel; only 6/8 of the error is propagated, preserving highlights and shadows.
 
@@ -37,7 +39,7 @@ bun run preview
 
 | Control | Description |
 |---|---|
-| Algorithm | Bayer / Floyd–Steinberg / Atkinson |
+| Algorithm | Bayer / Blue noise / Halftone / Floyd–Steinberg / Atkinson |
 | Color Mode | Black & White or Full Color |
 | Pixel Size | Block size, 1–20 px |
 | Dither Amount | Blends pure quantization with full dithering |

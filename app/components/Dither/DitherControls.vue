@@ -4,9 +4,11 @@ import type { Algorithm, ColorMode, DitherParams } from '~/utils/types'
 defineProps<{ params: DitherParams }>()
 
 const algorithms: { value: Algorithm; label: string }[] = [
-  { value: 'bayer',    label: 'Bayer 8×8' },
-  { value: 'fs',       label: 'Floyd–Steinberg' },
-  { value: 'atkinson', label: 'Atkinson' },
+  { value: 'bayer',      label: 'Bayer 8×8' },
+  { value: 'blue-noise', label: 'Blue noise' },
+  { value: 'halftone',   label: 'Halftone' },
+  { value: 'fs',         label: 'Floyd–Steinberg' },
+  { value: 'atkinson',   label: 'Atkinson' },
 ]
 
 const colorModes: { value: ColorMode; label: string }[] = [

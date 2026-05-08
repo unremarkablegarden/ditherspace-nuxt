@@ -1,4 +1,4 @@
-export type Algorithm = 'bayer' | 'fs' | 'atkinson'
+export type Algorithm = 'bayer' | 'halftone' | 'blue-noise' | 'fs' | 'atkinson'
 export type ColorMode = 'bw' | 'color'
 export type DitherMode = 'image' | 'video'
 
