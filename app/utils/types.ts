@@ -22,7 +22,7 @@ export const DEFAULT_PARAMS: DitherParams = {
   bitDepth: 2,
   contrast: 1.0,
   scale: 1.0,
-  fgColor: '#ffffff',
+  fgColor: '#efe5c0',
   bgColor: '#000000',
 }
 
