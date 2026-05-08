@@ -1,4 +1,4 @@
-<!--DitherSpace v1.6.6 by Landon Smith (build: 50726.1211)-->
+<!--DitherSpace v1.6.5 by Landon Smith (build: 42026.432)-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -46,29 +46,12 @@
             justify-content: center;
         }
         #dropOverlay.active { display: flex; }
-        :root {
-  --bg-color: #ffffff;
-  --text-color: #000000;
-}
-
-
-.dark-mode {
-  --bg-color: #121212;
-  --text-color: #ffffff;
-}
-
-body {
-  background-color: var(--bg-color);
-  color: var(--text-color);
-  transition: background-color 0.3s, color 0.3s; 
-}
     </style>
 </head>
 <body>
-    <h1>DitherSpace (v1.6.6)</h1>
+    <h1>DitherSpace (v1.6.5)</h1>
     An open-source port of the cyberspace.online image dithering algorithm. Source code is available on <a href="https://github.com/landonjsmith/DitherSpace">GitHub</a>.<br>
-    Translated to vanilla JS by Landon Smith | Additional dithering algorithms &amp; video support by Landon Smith | <a href="https://landonjsmith.com">Home</a> <br> 
-    <button id="theme-toggle">Toggle Dark Mode</button>
+    Translated to vanilla JS by Landon Smith | Additional dithering algorithms &amp; video support by Landon Smith | <a href="https://landonjsmith.com">Home</a>
     <hr>
 
     <div class="mode-tabs">
@@ -139,8 +122,8 @@ body {
             <label><input type="checkbox" id="maintainAspect" checked> Lock aspect ratio</label>
             <hr>
             <div id="bwColorControls">
-                <p><b>Foreground Color:</b> <input type="color" id="fgColor" value="#ffffff"></p>
-                <p><b>Background Color:</b> <input type="color" id="bgColor" value="#000000"></p>
+                <p><b>Foreground Color:</b> <input type="color" id="fgColor" value="#000000"></p>
+                <p><b>Background Color:</b> <input type="color" id="bgColor" value="#ffffff"></p>
             </div>
         </div>
 
@@ -288,7 +271,7 @@ class ImageDitherer {
         const defaults = {
             algorithm: 'bayer', colorMode: 'bw', pixelSize: 4,
             ditherAmount: 0.75, bitDepth: 2, contrast: 1.0, scale: 1.0,
-            fgColor: '#ffffff', bgColor: '#000000'
+            fgColor: '#000000', bgColor: '#ffffff'
         };
         const saved = localStorage.getItem('ditherSpacePreferences');
         if (saved) { try { const p = JSON.parse(saved); delete p.scale; return { ...defaults, ...p }; } catch(e) {} }
@@ -1374,25 +1357,6 @@ document.getElementById('targetHeight').addEventListener('input', function(e) {
         if (h>0) document.getElementById('targetWidth').value = Math.round(h*ditherer.aspectRatio);
     }
     applyCustomResolution();
-});
-const btn = document.getElementById("theme-toggle");
-const currentTheme = localStorage.getItem("theme");
-
-// Apply the saved theme on page load
-if (currentTheme === "dark") {
-  document.body.classList.add("dark-mode");
-}
-
-btn.addEventListener("click", function() {
-  // Toggle the class on the body
-  document.body.classList.toggle("dark-mode");
-  
-  // Save the preference
-  let theme = "light";
-  if (document.body.classList.contains("dark-mode")) {
-    theme = "dark";
-  }
-  localStorage.setItem("theme", theme);
 });
 
 loadSampleImage();
